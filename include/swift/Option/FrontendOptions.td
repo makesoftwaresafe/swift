@@ -365,8 +365,11 @@ def disable_requirement_machine_concrete_contraction : Flag<["-"], "disable-requ
   HelpText<"Disable preprocessing pass to eliminate conformance requirements "
            "on generic parameters which are made concrete">;
 
-def enable_requirement_machine_loop_normalization : Flag<["-"], "enable-requirement-machine-loop-normalization">,
-  HelpText<"Enable stronger minimization algorithm, for debugging only">;
+def disable_requirement_machine_loop_normalization : Flag<["-"], "disable-requirement-machine-loop-normalization">,
+  HelpText<"Disable stronger minimization algorithm, for debugging only">;
+
+def disable_requirement_machine_reuse : Flag<["-"], "disable-requirement-machine-reuse">,
+  HelpText<"Disable re-use of requirement machines for minimization, for debugging only">;
 
 def enable_requirement_machine_opaque_archetypes : Flag<["-"], "enable-requirement-machine-opaque-archetypes">,
   HelpText<"Enable more correct opaque archetype support, which is off by default because it might fail to produce a convergent rewrite system">;
@@ -555,6 +558,10 @@ def enable_experimental_string_processing :
 def enable_experimental_variadic_generics :
   Flag<["-"], "enable-experimental-variadic-generics">,
   HelpText<"Enable experimental support for variadic generic types">;
+
+def enable_experimental_associated_type_inference :
+  Flag<["-"], "enable-experimental-associated-type-inference">,
+  HelpText<"Enable experimental associated type inference via type witness systems">;
 
 def disable_availability_checking : Flag<["-"],
   "disable-availability-checking">,

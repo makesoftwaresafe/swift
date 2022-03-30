@@ -352,6 +352,10 @@ namespace swift {
     /// Enable variadic generics.
     bool EnableExperimentalVariadicGenerics = false;
 
+    /// Enable experimental associated type inference using type witness
+    /// systems.
+    bool EnableExperimentalAssociatedTypeInference = false;
+
     /// Disable the implicit import of the _Concurrency module.
     bool DisableImplicitConcurrencyModuleImport =
         !SWIFT_IMPLICIT_CONCURRENCY_IMPORT;
@@ -536,14 +540,18 @@ namespace swift {
     RequirementMachineMode RequirementMachineInferredSignatures =
         RequirementMachineMode::Verify;
 
-    /// Disable preprocessing pass to eliminate conformance requirements
+    /// Enable preprocessing pass to eliminate conformance requirements
     /// on generic parameters which are made concrete. Usually you want this
     /// enabled. It can be disabled for debugging and testing.
     bool EnableRequirementMachineConcreteContraction = true;
 
-    /// Enable the stronger minimization algorithm. This is just for debugging;
-    /// if you have a testcase which requires this, please submit a bug report.
-    bool EnableRequirementMachineLoopNormalization = false;
+    /// Enable the stronger minimization algorithm. Usually you want this
+    /// enabled. It can be disabled for debugging and testing.
+    bool EnableRequirementMachineLoopNormalization = true;
+
+    /// Enable reuse of requirement machines for minimization. Usually you want
+    /// this enabled. It can be disabled for debugging and testing.
+    bool EnableRequirementMachineReuse = true;
 
     /// Enable experimental, more correct support for opaque result types as
     /// concrete types. This will sometimes fail to produce a convergent

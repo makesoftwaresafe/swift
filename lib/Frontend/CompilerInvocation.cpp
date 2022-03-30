@@ -459,6 +459,9 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   Opts.EnableExperimentalVariadicGenerics |=
     Args.hasArg(OPT_enable_experimental_variadic_generics);
 
+  Opts.EnableExperimentalAssociatedTypeInference |=
+      Args.hasArg(OPT_enable_experimental_associated_type_inference);
+
   Opts.EnableExperimentalMoveOnly |=
     Args.hasArg(OPT_enable_experimental_move_only);
 
@@ -995,8 +998,11 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   if (Args.hasArg(OPT_disable_requirement_machine_concrete_contraction))
     Opts.EnableRequirementMachineConcreteContraction = false;
 
-  if (Args.hasArg(OPT_enable_requirement_machine_loop_normalization))
-    Opts.EnableRequirementMachineLoopNormalization = true;
+  if (Args.hasArg(OPT_disable_requirement_machine_loop_normalization))
+    Opts.EnableRequirementMachineLoopNormalization = false;
+
+  if (Args.hasArg(OPT_disable_requirement_machine_reuse))
+    Opts.EnableRequirementMachineReuse = false;
 
   if (Args.hasArg(OPT_enable_requirement_machine_opaque_archetypes))
     Opts.EnableRequirementMachineOpaqueArchetypes = true;

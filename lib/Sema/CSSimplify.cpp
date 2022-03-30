@@ -1478,9 +1478,9 @@ shouldOpenExistentialCallArgument(
   // An argument expression that explicitly coerces to an existential
   // disables the implicit opening of the existential.
   if (argExpr) {
-    if (auto argCoercion = dyn_cast<CoerceExpr>(
+    if (auto argCast = dyn_cast<ExplicitCastExpr>(
             argExpr->getSemanticsProvidingExpr())) {
-      if (auto typeRepr = argCoercion->getCastTypeRepr()) {
+      if (auto typeRepr = argCast->getCastTypeRepr()) {
         if (auto toType = cs.getType(typeRepr)) {
           if (toType->isAnyExistentialType())
             return None;
@@ -1500,25 +1500,6 @@ shouldOpenExistentialCallArgument(
   // The argument type needs to be an existential type or metatype thereof.
   if (!argTy->isAnyExistentialType())
     return None;
-
-  if (argTy->isExistentialType()) {
-    // If the existential argument type conforms to all of its protocol
-    // requirements, don't open the existential.
-    auto layout = argTy->getExistentialLayout();
-    auto module = cs.DC->getParentModule();
-    bool containsNonSelfConformance = false;
-    for (auto proto : layout.getProtocols()) {
-      auto protoDecl = proto->getDecl();
-      auto conformance = module->lookupExistentialConformance(argTy, protoDecl);
-      if (conformance.isInvalid()) {
-        containsNonSelfConformance = true;
-        break;
-      }
-    }
-
-    if (!containsNonSelfConformance)
-      return None;
-  }
 
   auto param = getParameterAt(callee, paramIdx);
   if (!param)
@@ -1560,6 +1541,31 @@ shouldOpenExistentialCallArgument(
   if (genericParam->getDepth() <
           genericSig.getGenericParams().back()->getDepth())
     return None;
+
+  // If the existential argument conforms to all of protocol requirements on
+  // the formal parameter's type, don't open.
+  // If all of the conformance requirements on the formal parameter's type
+  // are self-conforming, don't open.
+  {
+    Type existentialObjectType;
+    if (auto existentialMetaTy = argTy->getAs<ExistentialMetatypeType>())
+      existentialObjectType = existentialMetaTy->getInstanceType();
+    else
+      existentialObjectType = argTy;
+    auto module = cs.DC->getParentModule();
+    bool containsNonSelfConformance = false;
+    for (auto proto : genericSig->getRequiredProtocols(genericParam)) {
+      auto conformance = module->lookupExistentialConformance(
+          existentialObjectType, proto);
+      if (conformance.isInvalid()) {
+        containsNonSelfConformance = true;
+        break;
+      }
+    }
+
+    if (!containsNonSelfConformance)
+      return None;
+  }
 
   // Ensure that the formal parameter is only used in covariant positions,
   // because it won't match anywhere else.
@@ -1768,16 +1774,23 @@ static ConstraintSystem::TypeMatchResult matchCallArguments(
     // If type inference from default arguments is enabled, let's
     // add a constraint from the parameter if necessary, otherwise
     // there is nothing to do but move to the next parameter.
-    if (parameterBindings[paramIdx].empty()) {
+    if (parameterBindings[paramIdx].empty() && callee) {
       auto &ctx = cs.getASTContext();
 
       if (ctx.TypeCheckerOpts.EnableTypeInferenceFromDefaultArguments) {
         auto *paramList = getParameterList(callee);
-        auto *PD = paramList->get(paramIdx);
+        if (!paramList)
+          continue;
 
         // There is nothing to infer if parameter doesn't have any
         // generic parameters in its type.
+        auto *PD = paramList->get(paramIdx);
         if (!PD->getInterfaceType()->hasTypeParameter())
+          continue;
+
+        // The type of the default value is going to be determined
+        // based on a type deduced for the parameter at this call site.
+        if (PD->hasCallerSideDefaultExpr())
           continue;
 
         auto defaultExprType = PD->getTypeOfDefaultExpr();
@@ -1961,14 +1974,8 @@ static ConstraintSystem::TypeMatchResult matchCallArguments(
         auto *locator = cs.getConstraintLocator(loc);
         SourceRange range;
         // simplify locator so the anchor is the exact argument.
-        locator = simplifyLocator(cs, locator, range);
-        if (locator->getPath().empty() &&
-            locator->getAnchor().isExpr(ExprKind::UnresolvedMemberChainResult)) {
-          locator =
-            cs.getConstraintLocator(cast<UnresolvedMemberChainResultExpr>(
-              locator->getAnchor().get<Expr*>())->getSubExpr());
-        }
-        cs.recordFix(NotCompileTimeConst::create(cs, paramTy, locator));
+        cs.recordFix(NotCompileTimeConst::create(cs, paramTy,
+          simplifyLocator(cs, locator, range)));
       }
 
       cs.addConstraint(
@@ -4865,6 +4872,27 @@ bool ConstraintSystem::repairFailures(
 
   case ConstraintLocator::ApplyArgToParam: {
     auto loc = getConstraintLocator(locator);
+
+    // If this type mismatch is associated with a synthesized argument,
+    // let's just ignore it because the main problem is the absence of
+    // the argument.
+    if (auto applyLoc = elt.getAs<LocatorPathElt::ApplyArgToParam>()) {
+      if (auto *argumentList = getArgumentList(loc)) {
+        // This is either synthesized argument or a default value.
+        if (applyLoc->getArgIdx() >= argumentList->size()) {
+          auto *calleeLoc = getCalleeLocator(loc);
+          auto overload = findSelectedOverloadFor(calleeLoc);
+          // If this cannot be a default value matching, let's ignore.
+          if (!(overload && overload->choice.isDecl()))
+            return true;
+
+          if (!getParameterList(overload->choice.getDecl())
+                   ->get(applyLoc->getParamIdx())
+                   ->getTypeOfDefaultExpr())
+            return true;
+        }
+      }
+    }
 
     // Don't attempt to fix an argument being passed to a
     // _OptionalNilComparisonType parameter. Such an overload should only take
