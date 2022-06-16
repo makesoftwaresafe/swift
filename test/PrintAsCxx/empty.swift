@@ -35,6 +35,15 @@
 // CHECK-NEXT:  #include <stdbool.h>
 // CHECK-NEXT:  #include <string.h>
 // CHECK-NEXT:  #endif
+// CHECK-NEXT:  #if defined(__cplusplus)
+// CHECK-NEXT:  #if __has_include(<ptrauth.h>)
+// CHECK-NEXT:  # include <ptrauth.h>
+// CHECK-NEXT:  #else
+// CHECK-NEXT:  # ifndef __ptrauth_swift_value_witness_function_pointer
+// CHECK-NEXT:  #  define __ptrauth_swift_value_witness_function_pointer(x)
+// CHECK-NEXT:  # endif
+// CHECK-NEXT:  #endif
+// CHECK-NEXT:  #endif
 
 // CHECK-LABEL: !defined(SWIFT_TYPEDEFS)
 // CHECK-NEXT:  # define SWIFT_TYPEDEFS 1
@@ -64,13 +73,21 @@
 // CHECK-NEXT:  # define IBSegueAction
 // CHECK-NEXT:  #endif
 
+// CHECK-LABEL: # define SWIFT_CALL __attribute__((swiftcall))
+// CHECK:       # define SWIFT_INDIRECT_RESULT __attribute__((swift_indirect_result))
+// CHECK:       # define SWIFT_CONTEXT __attribute__((swift_context))
+
 // CHECK-LABEL: #if defined(__OBJC__)
 // CHECK-NEXT:  #if __has_feature(modules)
 
 // CHECK-LABEL: #if defined(__OBJC__)
 // CHECK-NEXT:  #endif
 // CHECK-NEXT:  #if defined(__cplusplus)
-// CHECK-NEXT:  namespace empty {
+// CHECK-NEXT:  #ifndef SWIFT_PRINTED_CORE
+// CHECK:       } // namespace swift
+// CHECK-EMPTY:
+// CHECK-NEXT:  #endif
+// CHECK:       namespace empty {
 // CHECK:       } // namespace empty
 // CHECK:       #endif
 
