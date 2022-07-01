@@ -1612,7 +1612,6 @@ namespace  {
 
     UNINTERESTING_ATTR(UnsafeInheritExecutor)
     UNINTERESTING_ATTR(CompilerInitialized)
-
 #undef UNINTERESTING_ATTR
 
     void visitAvailableAttr(AvailableAttr *attr) {
@@ -2331,7 +2330,7 @@ void swift::checkImplementationOnlyOverride(const ValueDecl *VD) {
   assert(SF && "checking a non-source declaration?");
 
   ModuleDecl *M = overridden->getModuleContext();
-  if (SF->isImportedImplementationOnly(M)) {
+  if (SF->getRestrictedImportKind(M) == RestrictedImportKind::ImplementationOnly) {
     VD->diagnose(diag::implementation_only_override_import_without_attr,
                  overridden->getDescriptiveKind())
         .fixItInsert(VD->getAttributeInsertionLoc(false),
