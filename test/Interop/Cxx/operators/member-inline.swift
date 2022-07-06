@@ -1,8 +1,11 @@
 // RUN: %target-run-simple-swift(-I %S/Inputs -Xfrontend -enable-experimental-cxx-interop)
-
+//
 // REQUIRES: executable_test
+// TODO: Fix CxxShim for Windows.
+// XFAIL: OS=windows-msvc
 
 import MemberInline
+import CxxShim
 import StdlibUnittest
 
 var OperatorsTestSuite = TestSuite("Operators")
@@ -26,6 +29,21 @@ OperatorsTestSuite.test("AddressOnlyIntWrapper.minus") {
    expectEqual(19, result.value)
 }
 #endif
+
+OperatorsTestSuite.test("LoadableIntWrapper.equal (inline)") {
+  let lhs = LoadableIntWrapper(value: 42)
+  let rhs = LoadableIntWrapper(value: 42)
+
+  let result = lhs == rhs
+
+  expectTrue(result)
+}
+
+OperatorsTestSuite.test("LoadableIntWrapper.unaryMinus (inline)") {
+  let lhs = LoadableIntWrapper(value: 42)
+  let inverseLhs = -lhs;
+  expectEqual(-42, inverseLhs.value)
+}
 
 OperatorsTestSuite.test("LoadableIntWrapper.call (inline)") {
   var wrapper = LoadableIntWrapper(value: 42)
