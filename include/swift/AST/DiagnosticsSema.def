@@ -979,6 +979,10 @@ REMARK(cross_import_added,none,
 REMARK(module_loaded,none,
        "loaded module at %0",
        (StringRef))
+       
+REMARK(explicit_interface_build_skipped,none,
+       "Skipped rebuilding module at %0 - up-to-date",
+       (StringRef))
 
 WARNING(cannot_find_project_version,none,
         "cannot find user version number for %0 module '%1'; version number ignored", (StringRef, StringRef))
@@ -5854,6 +5858,10 @@ ERROR(inlinable_typealias_desugars_to_type_from_hidden_module,
       "<<ERROR>>|"
       "%4 was not imported by this file}5",
       (DeclName, StringRef, StringRef, unsigned, Identifier, unsigned))
+
+NOTE(missing_import_inserted,
+     none, "The missing import of module %0 will be added implicitly",
+     (Identifier))
 
 ERROR(availability_macro_in_inlinable, none,
       "availability macro cannot be used in " FRAGILE_FUNC_KIND "0",
