@@ -345,6 +345,11 @@ static void diagSyntacticUseRestrictions(const Expr *E, const DeclContext *DC,
         checkMoveExpr(moveExpr);
       }
 
+      // Diagnose move expression uses where the sub expression is not a declref expr
+      if (auto *borrowExpr = dyn_cast<BorrowExpr>(E)) {
+        checkBorrowExpr(borrowExpr);
+      }
+
       if (!HasReachedSemanticsProvidingExpr &&
           E == E->getSemanticsProvidingExpr()) {
         HasReachedSemanticsProvidingExpr = true;
@@ -406,6 +411,26 @@ static void diagSyntacticUseRestrictions(const Expr *E, const DeclContext *DC,
       if (!isa<DeclRefExpr>(moveExpr->getSubExpr())) {
         Ctx.Diags.diagnose(moveExpr->getLoc(),
                            diag::move_expression_not_passed_lvalue);
+      }
+    }
+
+    void checkBorrowExpr(BorrowExpr *borrowExpr) {
+      // Make sure the MoveOnly feature is set. If not, error.
+      // This should not currently be reached because the parse should ignore
+      // the _move keyword unless the feature flag is set.
+      if (!Ctx.LangOpts.hasFeature(Feature::MoveOnly)) {
+        auto error =
+          diag::experimental_moveonly_feature_can_only_be_used_when_enabled;
+        Ctx.Diags.diagnose(borrowExpr->getLoc(), error);
+      }
+
+      // Allow for a chain of member_ref exprs that end in a decl_ref expr.
+      auto *subExpr = borrowExpr->getSubExpr();
+      while (auto *memberRef = dyn_cast<MemberRefExpr>(subExpr))
+        subExpr = memberRef->getBase();
+      if (!isa<DeclRefExpr>(subExpr)) {
+        Ctx.Diags.diagnose(borrowExpr->getLoc(),
+                           diag::borrow_expression_not_passed_lvalue);
       }
     }
 
@@ -2030,7 +2055,7 @@ bool TypeChecker::getDefaultGenericArgumentsString(
 bool swift::diagnoseArgumentLabelError(ASTContext &ctx,
                                        const ArgumentList *argList,
                                        ArrayRef<Identifier> newNames,
-                                       bool isSubscript,
+                                       ParameterContext paramContext,
                                        InFlightDiagnostic *existingDiag) {
   Optional<InFlightDiagnostic> diagOpt;
   auto getDiag = [&]() -> InFlightDiagnostic & {
@@ -2121,18 +2146,20 @@ bool swift::diagnoseArgumentLabelError(ASTContext &ctx,
       diagOpt.emplace(diags.diagnose(argList->getLoc(),
                                      diag::wrong_argument_labels,
                                      plural, haveStr, expectedStr,
-                                     isSubscript));
+                                     static_cast<unsigned>(paramContext)));
     } else if (numMissing > 0) {
       StringRef missingStr = missingBuffer;
       diagOpt.emplace(diags.diagnose(argList->getLoc(),
                                      diag::missing_argument_labels,
-                                     plural, missingStr, isSubscript));
+                                     plural, missingStr,
+                                     static_cast<unsigned>(paramContext)));
     } else {
       assert(numExtra > 0);
       StringRef extraStr = extraBuffer;
       diagOpt.emplace(diags.diagnose(argList->getLoc(),
                                      diag::extra_argument_labels,
-                                     plural, extraStr, isSubscript));
+                                     plural, extraStr,
+                                     static_cast<unsigned>(paramContext)));
     }
   }
 
