@@ -301,9 +301,12 @@ MacroDefinition MacroDefinitionRequest::evaluate(
 }
 
 /// Load a plugin library based on a module name.
-static void *loadPluginByName(StringRef searchPath, StringRef moduleName) {
+static void *loadPluginByName(StringRef searchPath, StringRef moduleName, llvm::vfs::FileSystem &fs) {
   SmallString<128> fullPath(searchPath);
   llvm::sys::path::append(fullPath, "lib" + moduleName + LTDL_SHLIB_EXT);
+  if (fs.getRealPath(fullPath, fullPath))
+    return nullptr;
+
 #if defined(_WIN32)
   return LoadLibraryA(fullPath.c_str());
 #else
@@ -314,9 +317,10 @@ static void *loadPluginByName(StringRef searchPath, StringRef moduleName) {
 void *CompilerPluginLoadRequest::evaluate(
     Evaluator &evaluator, ASTContext *ctx, Identifier moduleName
 ) const {
+  auto fs = ctx->SourceMgr.getFileSystem();
   auto &searchPathOpts = ctx->SearchPathOpts;
   for (const auto &path : searchPathOpts.PluginSearchPaths) {
-    if (auto found = loadPluginByName(path, moduleName.str()))
+    if (auto found = loadPluginByName(path, moduleName.str(), *fs))
       return found;
   }
 
@@ -386,6 +390,9 @@ static std::string adjustMacroExpansionBufferName(StringRef name) {
 
 bool ExpandMemberAttributeMacros::evaluate(Evaluator &evaluator,
                                            Decl *decl) const {
+  if (decl->isImplicit())
+    return false;
+
   auto *parentDecl = decl->getDeclContext()->getAsDecl();
   if (!parentDecl)
     return false;
@@ -411,6 +418,16 @@ bool ExpandSynthesizedMemberMacroRequest::evaluate(Evaluator &evaluator,
       });
 
   return synthesizedMembers;
+}
+
+bool ExpandPeerMacroRequest::evaluate(Evaluator &evaluator, Decl *decl) const {
+  bool addedPeers = false;
+  decl->forEachAttachedMacro(MacroRole::Peer,
+      [&](CustomAttr *attr, MacroDecl *macro) {
+        addedPeers |= expandPeers(attr, macro, decl);
+      });
+
+  return addedPeers;
 }
 
 /// Determine whether the given source file is from an expansion of the given
@@ -777,7 +794,13 @@ bool swift::expandFreestandingDeclarationMacro(
 static SourceFile *
 evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
                       bool passParentContext, MacroRole role) {
-  auto *dc = attachedTo->getInnermostDeclContext();
+  DeclContext *dc;
+  if (role == MacroRole::Peer) {
+    dc = attachedTo->getDeclContext();
+  } else {
+    dc = attachedTo->getInnermostDeclContext();
+  }
+
   ASTContext &ctx = dc->getASTContext();
   SourceManager &sourceMgr = ctx.SourceMgr;
 
@@ -932,6 +955,9 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
   case MacroRole::Member:
     generatedSourceKind = GeneratedSourceInfo::MemberMacroExpansion;
     break;
+  case MacroRole::Peer:
+    generatedSourceKind = GeneratedSourceInfo::PeerMacroExpansion;
+    break;
   case MacroRole::Expression:
   case MacroRole::Declaration:
     llvm_unreachable("freestanding macro in attached macro evaluation");
@@ -1042,7 +1068,6 @@ bool swift::expandMembers(CustomAttr *attr, MacroDecl *macro, Decl *decl) {
     // Note that synthesized members are not considered implicit. They have
     // proper source ranges that should be validated, and ASTScope does not
     // expand implicit scopes to the parent scope tree.
-    member->setDeclContext(decl->getInnermostDeclContext());
 
     if (auto *nominal = dyn_cast<NominalTypeDecl>(decl)) {
       nominal->addMember(member);
@@ -1054,6 +1079,34 @@ bool swift::expandMembers(CustomAttr *attr, MacroDecl *macro, Decl *decl) {
   }
 
   return synthesizedMembers;
+}
+
+bool swift::expandPeers(CustomAttr *attr, MacroDecl *macro, Decl *decl) {
+  auto macroSourceFile = evaluateAttachedMacro(macro, decl, attr,
+                                               /*passParentContext*/false,
+                                               MacroRole::Peer);
+  if (!macroSourceFile)
+    return false;
+
+  PrettyStackTraceDecl debugStack("applying expanded peer macro", decl);
+
+  bool addedPeers = false;
+  auto *parent = decl->getDeclContext();
+  auto topLevelDecls = macroSourceFile->getTopLevelDecls();
+  for (auto peer : topLevelDecls) {
+    if (auto *nominal = dyn_cast<NominalTypeDecl>(parent)) {
+      nominal->addMember(peer);
+    } else if (auto *extension = dyn_cast<ExtensionDecl>(parent)) {
+      extension->addMember(peer);
+    } else {
+      // TODO: Add peers to global or local contexts.
+      continue;
+    }
+
+    addedPeers = true;
+  }
+
+  return addedPeers;
 }
 
 MacroDecl *
