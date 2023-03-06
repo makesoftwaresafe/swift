@@ -5269,8 +5269,10 @@ synthesizeEmptyFunctionBody(AbstractFunctionDecl *afd, void *context) {
 
 DestructorDecl *
 GetDestructorRequest::evaluate(Evaluator &evaluator, ClassDecl *CD) const {
+  auto dc = CD->getImplementationContext();
+
   auto &ctx = CD->getASTContext();
-  auto *DD = new (ctx) DestructorDecl(CD->getLoc(), CD);
+  auto *DD = new (ctx) DestructorDecl(CD->getLoc(), dc->getAsGenericContext());
 
   DD->setImplicit();
 
@@ -6125,10 +6127,10 @@ void AbstractStorageDecl::setAccessors(SourceLoc lbraceLoc,
                                        ArrayRef<AccessorDecl *> accessors,
                                        SourceLoc rbraceLoc) {
   // This method is called after we've already recorded an accessors clause
-  // only on recovery paths and only when that clause was empty.
+  // only on recovery paths and only when that clause was empty, or when a
+  // macro expands to accessors (in which case, we may already have accessors).
   auto record = Accessors.getPointer();
   if (record) {
-    assert(record->getAllAccessors().empty());
     for (auto accessor : accessors) {
       (void) record->addOpaqueAccessor(accessor);
     }

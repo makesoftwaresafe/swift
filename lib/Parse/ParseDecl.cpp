@@ -7098,11 +7098,13 @@ void Parser::parseTopLevelAccessors(
     staticLoc = binding->getStaticLoc();
   }
 
+  bool hadLBrace = consumeIf(tok::l_brace);
+
   ParserStatus status;
   ParsedAccessors accessors;
   bool hasEffectfulGet = false;
   bool parsingLimitedSyntax = false;
-  while (!Tok.is(tok::eof)) {
+  while (!Tok.isAny(tok::r_brace, tok::eof)) {
     DeclAttributes attributes;
     AccessorKind kind = AccessorKind::Get;
     SourceLoc loc;
@@ -7114,6 +7116,10 @@ void Parser::parseTopLevelAccessors(
         loc, kind, accessors, hasEffectfulGet, indices, parsingLimitedSyntax,
         attributes, PD_Default, storage, staticLoc, status
     );
+  }
+
+  if (hadLBrace && Tok.is(tok::r_brace)) {
+    consumeToken(tok::r_brace);
   }
 
   // Consume remaining tokens.
@@ -9047,13 +9053,14 @@ parseDeclDeinit(ParseDeclOptions Flags, DeclAttributes &Attributes) {
 
   DD->getAttrs() = Attributes;
 
-  // Reject 'destructor' functions outside of structs, enums, and classes.
+  // Reject 'destructor' functions outside of structs, enums, classes, and
+  // @objcImplementation extensions.
   //
   // Later in the type checker, we validate that structs/enums only do this if
-  // they are move only.
-  auto *nom = dyn_cast<NominalTypeDecl>(CurDeclContext);
-  if (!nom ||
-      (!isa<StructDecl>(nom) && !isa<EnumDecl>(nom) && !isa<ClassDecl>(nom))) {
+  // they are move only, and that @objcImplementations are main-body.
+  auto *ED = dyn_cast<ExtensionDecl>(CurDeclContext);
+  if (!(isa<StructDecl>(CurDeclContext) || isa<EnumDecl>(CurDeclContext) ||
+        isa<ClassDecl>(CurDeclContext) || (ED && ED->isObjCImplementation()))) {
     diagnose(DestructorLoc, diag::destructor_decl_outside_class);
 
     // Tell the type checker not to touch this destructor.
