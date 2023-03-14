@@ -350,7 +350,7 @@ void SourceLookupCache::populateAuxiliaryDeclCache() {
     // macro does not produce the requested name, so the only impact is possibly
     // expanding earlier than needed / unnecessarily looking in the top-level
     // auxiliary decl cache.
-    for (auto attrConst : decl->getSemanticAttrs().getAttributes<CustomAttr>()) {
+    for (auto attrConst : decl->getAttrs().getAttributes<CustomAttr>()) {
       auto *attr = const_cast<CustomAttr *>(attrConst);
       UnresolvedMacroReference macroRef(attr);
       auto macroName = macroRef.getMacroName().getBaseIdentifier();
@@ -576,19 +576,13 @@ void SourceLookupCache::invalidate() {
   (void)SameSizeSmallVector{std::move(AllVisibleValues)};
 }
 
-PackageUnit::PackageUnit(Identifier name)
-  : DeclContext(DeclContextKind::Package, nullptr) {
-    PackageName = name;
-}
-
 //===----------------------------------------------------------------------===//
 // Module Implementation
 //===----------------------------------------------------------------------===//
 
 ModuleDecl::ModuleDecl(Identifier name, ASTContext &ctx,
-                       ImplicitImportInfo importInfo,
-                       PackageUnit *pkg = nullptr)
-    : DeclContext(DeclContextKind::Module, pkg),
+                       ImplicitImportInfo importInfo)
+    : DeclContext(DeclContextKind::Module, nullptr),
       TypeDecl(DeclKind::Module, &ctx, name, SourceLoc(), {}),
       ImportInfo(importInfo) {
 
@@ -3115,21 +3109,6 @@ RestrictedImportKind SourceFile::getRestrictedImportKind(const ModuleDecl *modul
   if (imports.isImportedBy(module, getParentModule()))
     return RestrictedImportKind::None;
 
-  if (importKind == RestrictedImportKind::MissingImport &&
-      (module->getLibraryLevel() == LibraryLevel::API ||
-       getParentModule()->getLibraryLevel() != LibraryLevel::API)) {
-    // Hack to fix swiftinterfaces in case of missing imports.
-    // We can get rid of this logic when we don't leak the use of non-locally
-    // imported things in API.
-    ImportPath::Element pathElement = {module->getName(), SourceLoc()};
-    auto pathArray = getASTContext().AllocateCopy(
-                       llvm::makeArrayRef(pathElement));
-    auto missingImport = ImportedModule(
-                           ImportPath::Access(pathArray),
-                           const_cast<ModuleDecl *>(module));
-    addMissingImportedModule(missingImport);
-  }
-
   return importKind;
 }
 
@@ -3154,6 +3133,10 @@ SourceFile::getImportAccessLevel(const ModuleDecl *targetModule) const {
   }
 
   return restrictiveImport;
+}
+
+void ModuleDecl::setPackageName(Identifier name) {
+  Package = PackageUnit::create(name, *this, getASTContext());
 }
 
 bool ModuleDecl::isImportedImplementationOnly(const ModuleDecl *module) const {

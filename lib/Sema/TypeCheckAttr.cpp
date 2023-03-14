@@ -2013,9 +2013,7 @@ void AttributeChecker::visitCDeclAttr(CDeclAttr *attr) {
 
 void AttributeChecker::visitExposeAttr(ExposeAttr *attr) {
   auto *VD = cast<ValueDecl>(D);
-  // Expose cannot be mixed with '@objc'/'@_cdecl' declarations.
-  if (VD->isObjC())
-    diagnose(attr->getLocation(), diag::expose_only_non_other_attr, "@objc");
+  // Expose cannot be mixed with '@_cdecl' declarations.
   if (VD->getAttrs().hasAttribute<CDeclAttr>())
     diagnose(attr->getLocation(), diag::expose_only_non_other_attr, "@_cdecl");
 
@@ -2038,6 +2036,10 @@ void AttributeChecker::visitExposeAttr(ExposeAttr *attr) {
   if (repr.isUnsupported()) {
     using namespace cxx_translation;
     switch (*repr.error) {
+    case UnrepresentableObjC:
+      diagnose(attr->getLocation(), diag::expose_unsupported_objc_decl_to_cxx,
+               VD->getDescriptiveKind(), VD);
+      break;
     case UnrepresentableAsync:
       diagnose(attr->getLocation(), diag::expose_unsupported_async_decl_to_cxx,
                VD->getDescriptiveKind(), VD);
@@ -3940,19 +3942,22 @@ void AttributeChecker::visitPropertyWrapperAttr(PropertyWrapperAttr *attr) {
 void AttributeChecker::visitResultBuilderAttr(ResultBuilderAttr *attr) {
   auto *nominal = dyn_cast<NominalTypeDecl>(D);
   auto &ctx = D->getASTContext();
-  SmallVector<ValueDecl *, 4> potentialMatches;
+  SmallVector<ValueDecl *, 4> buildBlockMatches;
+  SmallVector<ValueDecl *, 4> buildPartialBlockFirstMatches;
+  SmallVector<ValueDecl *, 4> buildPartialBlockAccumulatedMatches;
+
   bool supportsBuildBlock = TypeChecker::typeSupportsBuilderOp(
       nominal->getDeclaredType(), nominal, ctx.Id_buildBlock,
-      /*argLabels=*/{}, &potentialMatches);
+      /*argLabels=*/{}, &buildBlockMatches);
+
   bool supportsBuildPartialBlock =
       TypeChecker::typeSupportsBuilderOp(
-          nominal->getDeclaredType(), nominal,
-          ctx.Id_buildPartialBlock,
-          /*argLabels=*/{ctx.Id_first}, &potentialMatches) &&
+          nominal->getDeclaredType(), nominal, ctx.Id_buildPartialBlock,
+          /*argLabels=*/{ctx.Id_first}, &buildPartialBlockFirstMatches) &&
       TypeChecker::typeSupportsBuilderOp(
-          nominal->getDeclaredType(), nominal,
-          ctx.Id_buildPartialBlock,
-          /*argLabels=*/{ctx.Id_accumulated, ctx.Id_next}, &potentialMatches);
+          nominal->getDeclaredType(), nominal, ctx.Id_buildPartialBlock,
+          /*argLabels=*/{ctx.Id_accumulated, ctx.Id_next},
+          &buildPartialBlockAccumulatedMatches);
 
   if (!supportsBuildBlock && !supportsBuildPartialBlock) {
     {
@@ -3966,7 +3971,7 @@ void AttributeChecker::visitResultBuilderAttr(ResultBuilderAttr *attr) {
       Type componentType;
       std::tie(buildInsertionLoc, stubIndent, componentType) =
           determineResultBuilderBuildFixItInfo(nominal);
-      if (buildInsertionLoc.isValid() && potentialMatches.empty()) {
+      if (buildInsertionLoc.isValid() && buildBlockMatches.empty()) {
         std::string fixItString;
         {
           llvm::raw_string_ostream out(fixItString);
@@ -3982,7 +3987,7 @@ void AttributeChecker::visitResultBuilderAttr(ResultBuilderAttr *attr) {
 
     // For any close matches, attempt to explain to the user why they aren't
     // valid.
-    for (auto *member : potentialMatches) {
+    for (auto *member : buildBlockMatches) {
       if (member->isStatic() && isa<FuncDecl>(member))
         continue;
 
@@ -3995,6 +4000,69 @@ void AttributeChecker::visitResultBuilderAttr(ResultBuilderAttr *attr) {
       else
         diagnose(member->getLoc(),
                  diag::result_builder_buildblock_not_static_method);
+    }
+
+    return;
+  }
+
+  // Let's check whether one or more overloads of buildBlock or
+  // buildPartialBlock are as accessible as the builder type itself.
+  {
+    auto isBuildMethodAsAccessibleAsType = [&](ValueDecl *member) {
+      return !isMemberLessAccessibleThanType(nominal, member);
+    };
+
+    bool hasAccessibleBuildBlock =
+        llvm::any_of(buildBlockMatches, isBuildMethodAsAccessibleAsType);
+
+    bool hasAccessibleBuildPartialBlockFirst = false;
+    bool hasAccessibleBuildPartialBlockAccumulated = false;
+
+    if (supportsBuildPartialBlock) {
+      DeclName buildPartialBlockFirst(ctx, ctx.Id_buildPartialBlock,
+                                      /*argLabels=*/{ctx.Id_first});
+      DeclName buildPartialBlockAccumulated(
+          ctx, ctx.Id_buildPartialBlock,
+          /*argLabels=*/{ctx.Id_accumulated, ctx.Id_next});
+
+      buildPartialBlockFirstMatches.clear();
+      buildPartialBlockAccumulatedMatches.clear();
+
+      auto builderType = nominal->getDeclaredType();
+      nominal->lookupQualified(builderType, DeclNameRef(buildPartialBlockFirst),
+                               NL_QualifiedDefault,
+                               buildPartialBlockFirstMatches);
+      nominal->lookupQualified(
+          builderType, DeclNameRef(buildPartialBlockAccumulated),
+          NL_QualifiedDefault, buildPartialBlockAccumulatedMatches);
+
+      hasAccessibleBuildPartialBlockFirst = llvm::any_of(
+          buildPartialBlockFirstMatches, isBuildMethodAsAccessibleAsType);
+      hasAccessibleBuildPartialBlockAccumulated = llvm::any_of(
+          buildPartialBlockAccumulatedMatches, isBuildMethodAsAccessibleAsType);
+    }
+
+    if (!hasAccessibleBuildBlock) {
+      // No or incomplete `buildPartialBlock` and all overloads of
+      // `buildBlock(_:)` are less accessible than the type.
+      if (!supportsBuildPartialBlock) {
+        diagnose(nominal->getLoc(),
+                 diag::result_builder_buildblock_not_accessible,
+                 nominal->getName(), nominal->getFormalAccess());
+      } else {
+        if (!hasAccessibleBuildPartialBlockFirst) {
+          diagnose(nominal->getLoc(),
+                   diag::result_builder_buildpartialblock_first_not_accessible,
+                   nominal->getName(), nominal->getFormalAccess());
+        }
+
+        if (!hasAccessibleBuildPartialBlockAccumulated) {
+          diagnose(
+              nominal->getLoc(),
+              diag::result_builder_buildpartialblock_accumulated_not_accessible,
+              nominal->getName(), nominal->getFormalAccess());
+        }
+      }
     }
   }
 }

@@ -1609,6 +1609,8 @@ ERROR(expose_inside_unexposed_decl,none,
 ERROR(expose_invalid_name_pattern_init,none,
       "invalid declaration name '%0' specified in an @_expose attribute; "
       "exposed initializer name must start with 'init'", (StringRef))
+ERROR(expose_unsupported_objc_decl_to_cxx,none,
+      "@objc %0 %1 can not yet be exposed to C++", (DescriptiveDeclKind, ValueDecl *))
 ERROR(expose_unsupported_async_decl_to_cxx,none,
       "async %0 %1 can not be exposed to C++", (DescriptiveDeclKind, ValueDecl *))
 ERROR(expose_unsupported_actor_isolated_to_cxx,none,
@@ -1679,6 +1681,7 @@ ERROR(access_control_open_bad_decl,none,
 WARNING(access_control_non_objc_open_member,none,
       "non-'@objc' %0 in extensions cannot be overridden; use 'public' instead",
       (DescriptiveDeclKind))
+ERROR(access_control_requires_package_name, none, "decl has a package access level but no -package-name was passed", ())
 
 ERROR(invalid_decl_attribute,none,
       "'%0' attribute cannot be applied to this declaration", (DeclAttribute))
@@ -6626,7 +6629,21 @@ ERROR(cannot_declare_computed_var_in_result_builder,none,
 ERROR(cannot_convert_result_builder_result_to_return_type,none,
       "cannot convert result builder result type %0 to return type %1",
       (Type,Type))
-
+ERROR(result_builder_buildblock_not_accessible,none,
+      "result builder must provide at least one static 'buildBlock' as "
+      "accessible as result builder type %0 "
+      "(which is %select{private|fileprivate|internal|package|public|open}1)",
+      (DeclName, AccessLevel))
+ERROR(result_builder_buildpartialblock_first_not_accessible,none,
+      "result builder must provide at least one static 'buildPartialBlock(first:)' "
+      "as accessible as result builder type %0 "
+      "(which is %select{private|fileprivate|internal|package|public|open}1)",
+      (DeclName, AccessLevel))
+ERROR(result_builder_buildpartialblock_accumulated_not_accessible,none,
+      "result builder must provide at least one static 'buildPartialBlock(accumulated:next:)' "
+      "as accessible as result builder type %0 "
+      "(which is %select{private|fileprivate|internal|package|public|open}1)",
+      (DeclName, AccessLevel))
 
 //------------------------------------------------------------------------------
 // MARK: Tuple Shuffle Diagnostics
