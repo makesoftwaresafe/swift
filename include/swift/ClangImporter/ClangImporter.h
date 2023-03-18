@@ -532,6 +532,8 @@ public:
 
   bool isCXXMethodMutating(const clang::CXXMethodDecl *method) override;
 
+  bool isUnsafeCXXMethod(const FuncDecl *func) override;
+
   bool isAnnotatedWith(const clang::CXXMethodDecl *method, StringRef attr);
 
   /// Find the lookup table that corresponds to the given Clang module.
@@ -560,6 +562,9 @@ public:
 
   /// Enable the symbolic import experimental feature for the given callback.
   void withSymbolicFeatureEnabled(llvm::function_ref<void(void)> callback);
+
+  const clang::TypedefType *getTypeDefForCXXCFOptionsDefinition(
+      const clang::Decl *candidateDecl) override;
 };
 
 ImportDecl *createImportDecl(ASTContext &Ctx, DeclContext *DC, ClangNode ClangN,

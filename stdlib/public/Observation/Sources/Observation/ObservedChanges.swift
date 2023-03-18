@@ -12,47 +12,99 @@
 import _Concurrency
 
 @available(SwiftStdlib 5.9, *)
-public struct ObservedChanges<Subject: Observable, Element: Sendable> {
+public struct ObservedChange<Subject: Observable>: @unchecked Sendable {
+  private let _subject: Subject
+  private var properties: TrackedProperties<Subject>
+  
+  init(subject: Subject, properties: TrackedProperties<Subject>) {
+    self._subject = subject
+    self.properties = properties
+  }
+  
+  internal mutating func insert(_ keyPath: PartialKeyPath<Subject>) {
+    properties.insert(keyPath)
+  }
+  
+  public func contains(_ member: PartialKeyPath<Subject>) -> Bool {
+    properties.contains(member)
+  }
+}
+
+@available(SwiftStdlib 5.9, *)
+extension ObservedChange where Subject: Sendable {
+  public var subject: Subject { _subject }
+}
+
+@available(SwiftStdlib 5.9, *)
+public struct ObservedChanges<Subject: Observable, Isolation: Actor> {
   let context: ObservationRegistrar<Subject>.Context
-  let keyPath: KeyPath<Subject, Element>
+  let properties: TrackedProperties<Subject>
+  let isolation: Isolation
   
   init(
-    _ context: ObservationRegistrar<Subject>.Context, 
-    keyPath: KeyPath<Subject, Element>
+    _ context: ObservationRegistrar<Subject>.Context,
+    properties: TrackedProperties<Subject>,
+    isolation: Isolation
   ) {
     self.context = context
-    self.keyPath = keyPath
+    self.properties = properties
+    self.isolation = isolation
   }
 }
 
 @available(SwiftStdlib 5.9, *)
 extension ObservedChanges: AsyncSequence {
+  public typealias Element = ObservedChange<Subject>
+  
   public struct Iterator: AsyncIteratorProtocol {
-    let context: ObservationRegistrar<Subject>.Context
-    let keyPath: KeyPath<Subject, Element>
+    final class Iteration {
+      let context: ObservationRegistrar<Subject>.Context
+      let id: Int
+      
+      init(
+        _ context: ObservationRegistrar<Subject>.Context,
+        properties: TrackedProperties<Subject>
+      ) {
+        self.context = context
+        self.id = context.register(.transactions, properties: properties)
+      }
+      
+      deinit {
+        context.unregister(id)
+      }
+    }
+    
+    let iteration: Iteration
     let properties: TrackedProperties<Subject>
+    let isolation: Isolation
     
     init(
-      _ context: ObservationRegistrar<Subject>.Context, 
-      keyPath: KeyPath<Subject, Element>
+      _ context: ObservationRegistrar<Subject>.Context,
+      properties: TrackedProperties<Subject>,
+      isolation: Isolation
     ) {
-      self.context = context
-      self.keyPath = keyPath
-      properties = Subject.dependencies(of: keyPath)
+      self.iteration = Iteration(context, properties: properties)
+      self.properties = properties
+      self.isolation = isolation
+      
     }
     
     public mutating func next() async -> Element? {
-      await context.nextChange(to: keyPath, properties: properties)
+      await iteration.context.nextChange(
+        for: properties,
+        isolation: isolation,
+        id: iteration.id
+      )
     }
   }
   
   public func makeAsyncIterator() -> Iterator {
-    Iterator(context, keyPath: keyPath)
+    Iterator(context, properties: properties, isolation: isolation)
   }
 }
 
 @available(SwiftStdlib 5.9, *)
-extension ObservedChanges: @unchecked Sendable where Subject: Sendable { }
+extension ObservedChanges: @unchecked Sendable { }
 
 @available(*, unavailable)
 extension ObservedChanges.Iterator: Sendable { }

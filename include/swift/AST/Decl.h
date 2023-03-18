@@ -630,7 +630,7 @@ protected:
     HasAnyUnavailableValues : 1
   );
 
-  SWIFT_INLINE_BITFIELD(ModuleDecl, TypeDecl, 1+1+1+1+1+1+1+1+1+1+1+1+1+1+1,
+  SWIFT_INLINE_BITFIELD(ModuleDecl, TypeDecl, 1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1,
     /// If the module is compiled as static library.
     StaticLibrary : 1,
 
@@ -680,7 +680,11 @@ protected:
 
     /// If the map from @objc provided name to top level swift::Decl in this
     /// module is populated
-    ObjCNameLookupCachePopulated : 1
+    ObjCNameLookupCachePopulated : 1,
+
+    /// Whether the module is contained in the SDK or stdlib, or its a system
+    /// module and no SDK was specified.
+    IsNonUserModule : 1
   );
 
   SWIFT_INLINE_BITFIELD(PrecedenceGroupDecl, Decl, 1+2,
@@ -3856,6 +3860,9 @@ public:
   /// Find the 'RemoteCallArgument(label:name:value:)' initializer function.
   ConstructorDecl *getDistributedRemoteCallArgumentInitFunction() const;
 
+  /// Get the move-only `enqueue(Job)` protocol requirement function on the `Executor` protocol.
+  AbstractFunctionDecl *getExecutorOwnedEnqueueFunction() const;
+
   /// Collect the set of protocols to which this type should implicitly
   /// conform, such as AnyObject (for classes).
   void getImplicitProtocols(SmallVectorImpl<ProtocolDecl *> &protocols);
@@ -3936,6 +3943,9 @@ public:
 
   /// Whether this nominal type qualifies as any actor (plain or distributed).
   bool isAnyActor() const;
+
+  /// Whether this nominal type is the `MainActor` global actor.
+  bool isMainActor() const;
 
   /// Return the range of semantics attributes attached to this NominalTypeDecl.
   auto getSemanticsAttrs() const
@@ -4287,6 +4297,12 @@ public:
     Bits.StructDecl.HasUnreferenceableStorage = v;
   }
 
+  /// Does this struct represent a non-trivial (for the purpose of calls, as
+  /// defined by Itanium ABI) C++ record. A C++ record is considered non-trivial
+  /// for the purpose of calls if either its constructor, copy-constructor, or
+  /// destructor is non-trivial. As such, a C++ record with a non-trivial
+  /// copy-assignment operator but other trivial members is considered to be
+  /// trivial.
   bool isCxxNonTrivial() const { return Bits.StructDecl.IsCxxNonTrivial; }
 
   void setIsCxxNonTrivial(bool v) { Bits.StructDecl.IsCxxNonTrivial = v; }

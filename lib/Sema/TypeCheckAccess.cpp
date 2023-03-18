@@ -1268,7 +1268,8 @@ public:
       : AccessControlCheckerBase(/*checkUsableFromInline=*/true) {}
 
   static bool shouldSkipChecking(const ValueDecl *VD) {
-    if (VD->getFormalAccess() != AccessLevel::Internal)
+    if (VD->getFormalAccess() != AccessLevel::Internal &&
+        VD->getFormalAccess() != AccessLevel::Package)
       return true;
     return !VD->isUsableFromInline();
   };
@@ -1946,13 +1947,23 @@ public:
   explicit DeclAvailabilityChecker(ExportContext where)
     : Where(where) {}
 
+  void checkGlobalActor(Decl *D) {
+    auto globalActor = D->getGlobalActorAttr();
+    if (!globalActor)
+      return;
+
+    // Avoid checking the availability for a @MainActor constraint since it does
+    // not carry an inherent ABI impact.
+    if (globalActor->second->isMainActor())
+      return;
+
+    auto customAttr = globalActor->first;
+    checkType(customAttr->getType(), customAttr->getTypeRepr(), D);
+  }
+
   void visit(Decl *D) {
     DeclVisitor<DeclAvailabilityChecker>::visit(D);
-    
-    if (auto globalActor = D->getGlobalActorAttr()) {
-      auto customAttr = globalActor->first;
-      checkType(customAttr->getType(), customAttr->getTypeRepr(), D);
-    }
+    checkGlobalActor(D);
   }
   
   // Force all kinds to be handled at a lower level.

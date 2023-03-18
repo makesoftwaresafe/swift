@@ -6199,6 +6199,21 @@ bool ClangImporter::isCXXMethodMutating(const clang::CXXMethodDecl *method) {
   return false;
 }
 
+bool ClangImporter::isUnsafeCXXMethod(const FuncDecl *func) {
+  if (!func->hasClangNode())
+    return false;
+  auto clangDecl = func->getClangNode().getAsDecl();
+  if (!clangDecl)
+    return false;
+  auto cxxMethod = dyn_cast<clang::CXXMethodDecl>(clangDecl);
+  if (!cxxMethod)
+    return false;
+  if (!func->hasName())
+    return false;
+  auto id = func->getBaseIdentifier().str();
+  return id.startswith("__") && id.endswith("Unsafe");
+}
+
 bool ClangImporter::isAnnotatedWith(const clang::CXXMethodDecl *method,
                                     StringRef attr) {
   return method->hasAttrs() &&
@@ -6487,7 +6502,6 @@ CxxRecordSemanticsKind
 CxxRecordSemantics::evaluate(Evaluator &evaluator,
                              CxxRecordSemanticsDescriptor desc) const {
   const auto *decl = desc.decl;
-  auto &clangSema = desc.ctx.getClangModuleLoader()->getClangSema();
 
   if (hasImportAsRefAttr(decl)) {
     return CxxRecordSemanticsKind::Reference;
@@ -6575,6 +6589,7 @@ bool IsSafeUseOfCxxDecl::evaluate(Evaluator &evaluator,
 
         if (!cxxRecordReturnType->hasUserDeclaredCopyConstructor() &&
             !cxxRecordReturnType->hasUserDeclaredMoveConstructor() &&
+            !hasOwnedValueAttr(cxxRecordReturnType) &&
             hasPointerInSubobjects(cxxRecordReturnType)) {
           return false;
         }
@@ -6668,6 +6683,35 @@ void ClangImporter::withSymbolicFeatureEnabled(
   Impl.ImportedDecls = std::move(importedDeclsCopy);
   Impl.nameImporter->enableSymbolicImportFeature(
       oldImportSymbolicCXXDecls.get());
+}
+
+const clang::TypedefType *ClangImporter::getTypeDefForCXXCFOptionsDefinition(
+    const clang::Decl *candidateDecl) {
+
+  if (!Impl.SwiftContext.LangOpts.EnableCXXInterop)
+    return nullptr;
+
+  auto enumDecl = dyn_cast<clang::EnumDecl>(candidateDecl);
+  if (!enumDecl)
+    return nullptr;
+
+  if (!enumDecl->getDeclName().isEmpty())
+    return nullptr;
+
+  if (auto typedefType = dyn_cast<clang::TypedefType>(
+          enumDecl->getIntegerType().getTypePtr())) {
+    if (auto enumExtensibilityAttr =
+            typedefType->getDecl()->getAttr<clang::EnumExtensibilityAttr>();
+        enumExtensibilityAttr &&
+        enumExtensibilityAttr->getExtensibility() ==
+            clang::EnumExtensibilityAttr::Open &&
+        typedefType->getDecl()->hasAttr<clang::FlagEnumAttr>()) {
+      return Impl.isUnavailableInSwift(typedefType->getDecl()) ? typedefType
+                                                               : nullptr;
+    }
+  }
+
+  return nullptr;
 }
 
 bool importer::requiresCPlusPlus(const clang::Module *module) {

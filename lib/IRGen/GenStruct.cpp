@@ -731,6 +731,9 @@ namespace {
       std::vector<TypeLayoutEntry *> fields;
       for (auto &field : getFields()) {
         auto fieldTy = field.getType(IGM, T);
+        if (!fieldTy) {
+          return IGM.typeLayoutCache.getOrCreateTypeInfoBasedEntry(*this, T);
+        }
         fields.push_back(
             field.getTypeInfo().buildTypeLayoutEntry(IGM, fieldTy, useStructLayouts));
       }
@@ -769,6 +772,7 @@ namespace {
     void assignWithCopy(IRGenFunction &IGF, Address destAddr, Address srcAddr,
                         SILType T, bool isOutlined) const override {
       if (auto copyConstructor = findCopyConstructor()) {
+        destroy(IGF, destAddr, T, isOutlined);
         emitCopyWithCopyConstructor(IGF, T, copyConstructor,
                                     srcAddr.getAddress(),
                                     destAddr.getAddress());
@@ -797,6 +801,7 @@ namespace {
     void assignWithTake(IRGenFunction &IGF, Address dest, Address src, SILType T,
                         bool isOutlined) const override {
       if (auto copyConstructor = findCopyConstructor()) {
+        destroy(IGF, dest, T, isOutlined);
         emitCopyWithCopyConstructor(IGF, T, copyConstructor,
                                     src.getAddress(),
                                     dest.getAddress());

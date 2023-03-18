@@ -2886,8 +2886,9 @@ void AttributeChecker::visitUsableFromInlineAttr(UsableFromInlineAttr *attr) {
     return;
   }
 
-  // @usableFromInline can only be applied to internal declarations.
-  if (VD->getFormalAccess() != AccessLevel::Internal) {
+  // @usableFromInline can only be applied to internal or package declarations.
+  if (VD->getFormalAccess() != AccessLevel::Internal &&
+      VD->getFormalAccess() != AccessLevel::Package) {
     diagnoseAndRemoveAttr(attr,
                           diag::usable_from_inline_attr_with_explicit_access,
                           VD->getName(), VD->getFormalAccess());
@@ -3616,15 +3617,6 @@ void AttributeChecker::visitFrozenAttr(FrozenAttr *attr) {
   }
 }
 
-/// Determine whether this is the main actor type.
-/// FIXME: the diagnostics engine and TypeCheckConcurrency both have a copy of
-///        this
-static bool isMainActor(NominalTypeDecl *nominal) {
-  return nominal->getName().is("MainActor") &&
-         nominal->getParentModule()->getName() ==
-             nominal->getASTContext().Id_Concurrency;
-}
-
 void AttributeChecker::visitCustomAttr(CustomAttr *attr) {
   auto dc = D->getDeclContext();
 
@@ -3667,7 +3659,7 @@ void AttributeChecker::visitCustomAttr(CustomAttr *attr) {
     return;
   }
 
-  if (isMainActor(nominal) && Ctx.LangOpts.isConcurrencyModelTaskToThread() &&
+  if (nominal->isMainActor() && Ctx.LangOpts.isConcurrencyModelTaskToThread() &&
       !AvailableAttr::isUnavailable(D)) {
     Ctx.Diags.diagnose(attr->getLocation(),
                        diag::concurrency_task_to_thread_model_main_actor,
