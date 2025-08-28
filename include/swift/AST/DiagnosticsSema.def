@@ -681,6 +681,9 @@ ERROR(expr_keypath_nonescapable_type,none,
 ERROR(expr_keypath_not_property,none,
       "%select{key path|dynamic key path member lookup}1 cannot refer to %kind0",
       (const ValueDecl *, bool))
+ERROR(expr_keypath_type_ref,none,
+      "%select{key path|dynamic key path member lookup}1 cannot refer to type %0",
+      (const ValueDecl *, bool))
 ERROR(expr_keypath_mutating_getter,none,
       "%select{key path|dynamic key path member lookup}1 cannot refer to %0, "
       "which has a mutating getter",
@@ -1226,7 +1229,7 @@ ERROR(imported_decl_is_wrong_kind_typealias,none,
 ERROR(ambiguous_decl_in_module,none,
       "ambiguous name %0 in module %1", (Identifier, Identifier))
 
-ERROR(module_not_testable,Fatal,
+GROUPED_ERROR(module_not_testable,ModuleNotTestable,Fatal,
       "module %0 was not compiled for testing", (Identifier))
 
 ERROR(module_not_compiled_for_private_import,none,
